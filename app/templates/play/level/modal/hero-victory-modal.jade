@@ -14,21 +14,24 @@ block modal-body-content
     .achievement-panel(class=achievement.completedAWhileAgo ? 'earned' : '' data-achievement-id=achievement.id data-animate=animate)
       - var rewards = achievement.get('rewards') || {};
       
-      div.achievement-description= achievement.get('description')
+      div.achievement-description= achievement.description
       
       div.achievement-rewards
-        - var worth = achievement.get('worth', true);
+        - var worth = achievement.worth;
+        - var previousWorth = achievement.previousWorth;
+        - var gems = achievement.gems;
+        - var previousGems = achievement.previousGems;
         if worth
-          .reward-panel.numerical.xp(data-number=worth, data-number-unit='xp')
+          .reward-panel.numerical.xp(data-number=worth, data-number-unit='xp', data-previous-number=previousWorth || 0)
             .reward-image-container(class=animate ? 'pending-reward-image' : 'show')
               img(src="/images/pages/play/level/modal/reward_icon_xp.png")
             .reward-text= animate ? '+0' : '+'+worth
 
-        if rewards.gems
-          .reward-panel.numerical.gems(data-number=rewards.gems, data-number-unit='gem')
+        if gems
+          .reward-panel.numerical.gems(data-number=gems, data-number-unit='gem', data-previous-number=previousGems || 0)
             .reward-image-container(class=animate ? 'pending-reward-image' : 'show')
               img(src="/images/pages/play/level/modal/reward_icon_gems.png")
-            .reward-text= animate ? '+0' : '+'+rewards.gems
+            .reward-text= animate ? '+0' : '+'+gems
           
         if rewards.heroes
           for hero in rewards.heroes
@@ -44,7 +47,10 @@ block modal-body-content
             .reward-panel.item(data-item-thang-type=item.get('original'))
               .reward-image-container(class=animate ? 'pending-reward-image' : 'show')
                 img(src=item.getPortraitURL())
-              .reward-text= animate ? 'New Item' : item.get('name')
+              if animate
+                .reward-text(data-i18n="play_level.victory_new_item") New Item
+              else
+                .reward-text= i18n(item.attributes, 'name')
 
 block modal-footer-content
   #totals
@@ -77,11 +83,21 @@ block modal-footer-content
     else
       button.btn.btn-illustrated.btn-success.btn-lg.world-map-button.next-level-button.hide#continue-button(data-i18n="play_level.victory_play_continue") Continue
 
+  if !me.get('anonymous') && !showHourOfCodeDoneButton && showLeaderboard
+    button.btn.btn-illustrated.btn-success.leaderboard-button.btn-lg(data-dismiss="modal", data-i18n="leaderboard.view_other_solutions") View Other Solutions
+
   if showHourOfCodeDoneButton
     .hour-of-code-done
       a.image-link(href="http://code.org/api/hour/finish")
         img(src="/images/level/csedweek-logo-final-small.jpg", alt="CS Ed Week Hour of Code", title="I'm finished with my Hour of Code", width=80)
       strong(data-i18n="play_level.victory_hour_of_code_done") Are You Done?
       a.text-link(href="http://code.org/api/hour/finish")
-        span(data-i18n="play_level.victory_hour_of_code_done_yes") Yes, I'm finished with my Hour of Code!
+        span(data-i18n="play_level.victory_hour_of_code_done_yes") Yes, I am finished with my Hour of Code!
       .clearfix
+
+  .offer.lost-viking
+    p
+      img.pull-left(src="/file/db/level/55144b509f0c4854051769c1/viking1.png")
+      img.pull-right(src="/file/db/level/55144b509f0c4854051769c1/viking_2.png")
+      span(data-i18n="play_level.victory_viking_code_school")
+    button.btn.btn-illustrated.btn-primary.btn-lg.world-map-button.continue-from-offer-button(data-i18n="play_level.victory_become_a_viking") Become a Viking

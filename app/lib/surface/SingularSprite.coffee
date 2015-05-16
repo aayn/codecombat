@@ -1,6 +1,6 @@
 SpriteBuilder = require 'lib/sprites/SpriteBuilder'
 
-floors = ['Dungeon Floor', 'Indoor Floor', 'Grass', 'Grass01', 'Grass02', 'Grass03', 'Grass04', 'Grass05', 'Goal Trigger', 'Obstacle', 'Sand 01', 'Sand 02', 'Sand 03', 'Sand 04', 'Sand 05', 'Sand 06']
+floors = ['Dungeon Floor', 'Indoor Floor', 'Grass', 'Grass01', 'Grass02', 'Grass03', 'Grass04', 'Grass05', 'Goal Trigger', 'Obstacle', 'Sand 01', 'Sand 02', 'Sand 03', 'Sand 04', 'Sand 05', 'Sand 06', 'Talus 1', 'Talus 2', 'Talus 3', 'Talus 4', 'Talus 5', 'Talus 6']
 
 module.exports = class SingularSprite extends createjs.Sprite
   childMovieClips: null
@@ -20,7 +20,7 @@ module.exports = class SingularSprite extends createjs.Sprite
     @actionNotSupported = false
 
     action = @thangType.getActions()[actionName]
-    randomStart = actionName.startsWith('move')
+    randomStart = _.string.startsWith(actionName, 'move')
     reg = action.positions?.registration or @thangType.get('positions')?.registration or {x:0, y:0}
 
     if action.animation
@@ -65,12 +65,12 @@ module.exports = class SingularSprite extends createjs.Sprite
         @regY = -reg.y * scale
         @scaleX = @scaleY = 1 / @resolutionFactor
 
-    if @camera and @thangType.get('name') in floors
-      @baseScaleY *= @camera.y2x
     @scaleX *= -1 if action.flipX
     @scaleY *= -1 if action.flipY
     @baseScaleX = @scaleX
     @baseScaleY = @scaleY
+    if @camera and @thangType.get('name') in floors
+      @baseScaleY *= @camera.y2x
     @currentAnimation = actionName
     return
 

@@ -9,8 +9,8 @@ module.exports = class Level extends CocoModel
   @levels:
     'dungeons-of-kithgard': '5411cb3769152f1707be029c'
     'defense-of-plainswood': '541b67f71ccc8eaae19f3c62'
-    'the-mighty-sand-yak': '5480b9d01bf0b10000711c5f'
   urlRoot: '/db/level'
+  editableByArtisans: true
 
   serialize: (supermodel, session, otherSession, cached=false) ->
     o = @denormalize supermodel, session, otherSession # hot spot to optimize
@@ -119,10 +119,16 @@ module.exports = class Level extends CocoModel
         else if placeholderConfig.programmableMethods
           # Take the ThangType default Programmable and merge level-specific Component config into it
           copy = $.extend true, {}, placeholderConfig
+          programmableProperties = levelThangComponent.config?.programmableProperties ? []
+          copy.programmableProperties = _.union programmableProperties, copy.programmableProperties ? []
           levelThangComponent.config = _.merge copy, levelThangComponent.config
         else if placeholderConfig.extraHUDProperties
           levelThangComponent.config ?= {}
           levelThangComponent.config.extraHUDProperties = _.union(levelThangComponent.config.extraHUDProperties ? [], placeholderConfig.extraHUDProperties)
+        else if placeholderConfig.voiceRange  # Pull in voiceRange
+          levelThangComponent.config ?= {}
+          levelThangComponent.config.voiceRange = placeholderConfig.voiceRange
+          levelThangComponent.config.cooldown = placeholderConfig.cooldown
 
     if isHero
       if equips = _.find levelThang.components, {original: LevelComponent.EquipsID}

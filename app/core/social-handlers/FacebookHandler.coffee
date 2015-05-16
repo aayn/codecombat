@@ -48,10 +48,9 @@ module.exports = FacebookHandler = class FacebookHandler extends CocoClass
       error: backboneFailure,
       url: "/db/user/#{me.id}?facebookID=#{r.id}&facebookAccessToken=#{@authResponse.accessToken}"
       success: (model) ->
-        window.tracker?.trackEvent 'Facebook Login', category: "Signup", ['Google Analytics']
+        window.tracker?.trackEvent 'Facebook Login', category: "Signup", label: 'Facebook'
         if model.id is beforeID
           window.tracker?.trackEvent 'Finished Signup', category: "Signup", label: 'Facebook'
-          window.tracker?.trackPageView "signup/finished", ['Google Analytics']
         window.location.reload() if model.get('email') isnt oldEmail
     })
 

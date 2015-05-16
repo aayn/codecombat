@@ -13,12 +13,13 @@ HIGHEST_SCORE = 1000000
 
 module.exports = class LadderTabView extends CocoView
   id: 'ladder-tab-view'
-  template: require 'templates/play/ladder/ladder_tab'
+  template: require 'templates/play/ladder/ladder-tab-view'
 
   events:
     'click .connect-facebook': 'onConnectFacebook'
     'click .connect-google-plus': 'onConnectGPlus'
     'click .name-col-cell': 'onClickPlayerName'
+    'click .spectate-cell': 'onClickSpectateCell'
     'click .load-more-ladder-entries': 'onLoadMoreLadderEntries'
 
   subscriptions:
@@ -154,7 +155,7 @@ module.exports = class LadderTabView extends CocoView
         oldLeaderboard.destroy()
       teamSession = _.find @sessions.models, (session) -> session.get('team') is team.id
       @leaderboards[team.id] = new LeaderboardData(@level, team.id, teamSession, @ladderLimit)
-      @leaderboardRes = @supermodel.addModelResource(@leaderboards[team.id], 'leaderboard', {}, 3)
+      @leaderboardRes = @supermodel.addModelResource(@leaderboards[team.id], 'leaderboard', {cache: false}, 3)
       @leaderboardRes.load()
 
   render: ->
@@ -165,7 +166,7 @@ module.exports = class LadderTabView extends CocoView
       team = _.find @teams, name: histogramWrapper.data('team-name')
       histogramData = null
       $.when(
-        $.get("/db/level/#{@level.get('slug')}/histogram_data?team=#{team.name.toLowerCase()}", (data) -> histogramData = data)
+        $.get "/db/level/#{@level.get('slug')}/histogram_data?team=#{team.name.toLowerCase()}", {cache: false}, (data) -> histogramData = data
       ).then =>
         @generateHistogram(histogramWrapper, histogramData, team.name.toLowerCase()) unless @destroyed
 
@@ -277,6 +278,19 @@ module.exports = class LadderTabView extends CocoView
     session = new LevelSession _id: row.data 'session-id'
     @openModalView new ModelModal models: [session, player]
 
+  onClickSpectateCell: (e) ->
+    cell = $(e.target).closest '.spectate-cell'
+    row = cell.parent()
+    table = row.closest('table')
+    wasSelected = cell.hasClass 'selected'
+    table.find('.spectate-cell.selected').removeClass 'selected'
+    cell = $(e.target).closest('.spectate-cell').toggleClass 'selected', not wasSelected
+    sessionID = row.data 'session-id'
+    teamID = table.data 'team'
+    @spectateTargets ?= {}
+    @spectateTargets[teamID] = if wasSelected then null else sessionID
+    console.log @spectateTargets, cell, row, table
+
   onLoadMoreLadderEntries: (e) ->
     @ladderLimit ?= 100
     @ladderLimit += 100
@@ -294,17 +308,17 @@ module.exports.LeaderboardData = LeaderboardData = class LeaderboardData extends
     console.warn 'Already have top players on', @ if @topPlayers
     @topPlayers = new LeaderboardCollection(@level, {order: -1, scoreOffset: HIGHEST_SCORE, team: @team, limit: @limit})
     promises = []
-    promises.push @topPlayers.fetch()
+    promises.push @topPlayers.fetch cache: false
 
     if @session
       score = @session.get('totalScore') or 10
       @playersAbove = new LeaderboardCollection(@level, {order: 1, scoreOffset: score, limit: 4, team: @team})
-      promises.push @playersAbove.fetch()
+      promises.push @playersAbove.fetch cache: false
       @playersBelow = new LeaderboardCollection(@level, {order: -1, scoreOffset: score, limit: 4, team: @team})
-      promises.push @playersBelow.fetch()
+      promises.push @playersBelow.fetch cache: false
       level = "#{@level.get('original')}.#{@level.get('version').major}"
       success = (@myRank) =>
-      promises.push $.ajax "/db/level/#{level}/leaderboard_rank?scoreOffset=#{@session.get('totalScore')}&team=#{@team}", {success}
+      promises.push $.ajax("/db/level/#{level}/leaderboard_rank?scoreOffset=#{@session.get('totalScore')}&team=#{@team}", cache: false, success: success)
     @promise = $.when(promises...)
     @promise.then @onLoad
     @promise.fail @onFail

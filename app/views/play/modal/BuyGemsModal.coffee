@@ -2,6 +2,7 @@ ModalView = require 'views/core/ModalView'
 template = require 'templates/play/modal/buy-gems-modal'
 stripeHandler = require 'core/services/stripe'
 utils = require 'core/utils'
+SubscribeModal = require 'views/core/SubscribeModal'
 
 module.exports = class BuyGemsModal extends ModalView
   id: 'buy-gems-modal'
@@ -20,16 +21,23 @@ module.exports = class BuyGemsModal extends ModalView
     'stripe:received-token': 'onStripeReceivedToken'
 
   events:
-    'click .product button': 'onClickProductButton'
+    'click .product button:not(.start-subscription-button)': 'onClickProductButton'
+    'click #close-modal': 'hide'
+    'click .start-subscription-button': 'onClickStartSubscription'
 
   constructor: (options) ->
     super(options)
+    @timestampForPurchase = new Date().getTime()
     @state = 'standby'
     if application.isIPadApp
       @products = []
       Backbone.Mediator.publish 'buy-gems-modal:update-products'
     else
       @products = @originalProducts
+      $.post '/db/payment/check-stripe-charges', (something, somethingElse, jqxhr) =>
+        if jqxhr.status is 201
+          @state = 'recovered_charge'
+          @render()
 
   getRenderData: ->
     c = super()
@@ -57,17 +65,17 @@ module.exports = class BuyGemsModal extends ModalView
       Backbone.Mediator.publish 'buy-gems-modal:purchase-initiated', { productID: productID }
 
     else
-      # TODO: rename this event to 'Started gem purchase' after gemPrompt A/B test is over
-      application.tracker?.trackEvent 'Started purchase', { productID: productID }
+      application.tracker?.trackEvent 'Started gem purchase', { productID: productID }
       stripeHandler.open({
         description: $.t(product.i18n)
         amount: product.amount
+        bitcoin: true
+        alipay: if me.get('chinaVersion') or (me.get('preferredLanguage') or 'en-US')[...2] is 'zh' then true else 'auto'
       })
 
     @productBeingPurchased = product
 
   onStripeReceivedToken: (e) ->
-    @timestampForPurchase = new Date().getTime()
     data = {
       productID: @productBeingPurchased.id
       stripe: {
@@ -81,7 +89,7 @@ module.exports = class BuyGemsModal extends ModalView
     jqxhr.done(=>
       application.tracker?.trackEvent 'Finished gem purchase',
         productID: @productBeingPurchased.id
-        revenue: @productBeingPurchased.amount / 100
+        value: @productBeingPurchased.amount
       document.location.reload()
     )
     jqxhr.fail(=>
@@ -106,3 +114,7 @@ module.exports = class BuyGemsModal extends ModalView
     purchased.gems += product.gems
     me.set('purchased', purchased)
     @hide()
+
+  onClickStartSubscription: (e) ->
+    @openModalView new SubscribeModal()
+    window.tracker?.trackEvent 'Show subscription modal', category: 'Subscription', label: 'buy gems modal'

@@ -55,7 +55,7 @@
       width: 100%
       height: 100%
       text-align: center
-      background: transparent url(/images/pages/play/level/modal/victory_hero.png/) no-repeat
+      background: transparent url(/images/pages/play/level/modal/victory_hero.png) no-repeat
       background-position: center -88px
   
       &.out
@@ -253,6 +253,15 @@
         font-weight: bold
         color: rgb(40, 33, 22)
         margin-right: 12px
+        width: 78px
+
+        &.four-digits
+          font-size: 40px
+          margin-top: 3px
+
+        &.five-digits
+          font-size: 30px
+          margin-top: 10px
 
       .total-label
         float: left
@@ -320,6 +329,11 @@
       margin: 0
       float: left
     
+  .leaderboard-button
+    height: 60px
+    line-height: 30px
+    margin: 0 10px
+    float: right
 
   .next-level-buttons
     float: right
@@ -336,7 +350,7 @@
 
       .rank-button.btn-block
         display: inline-block
-        width: initial
+        width: auto
         padding-left: 19px
         padding-right: 19px
 
@@ -364,6 +378,11 @@
     .text-link
       color: lighten(#0b63bc, 10%)
 
+  .offer
+    display: none
+
+    p
+      color: white
 
 html.no-borderimage
   #hero-victory-modal
@@ -392,3 +411,7 @@ body.ipad
     // This animation is slow and wigs out on iPad and very old computers.
     .xp .pulse, .gems .pulse
       @include animation(none)
+
+body[lang='ru'], body[lang^='es-ES'], body[lang^='it'], body[lang^='hu'], body[lang^='mk-MK'], body[lang^='ja'], body[lang^='uk']
+  #hero-victory-modal #totals .total-wrapper .total-label
+    font-size: 12px

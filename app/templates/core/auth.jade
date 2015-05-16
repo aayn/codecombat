@@ -20,6 +20,9 @@
     if showRequiredError
       .alert.alert-success
         span(data-i18n="signup.required") You need to log in before you can that way.
+    else if mode === 'signup' && showSignupRationale
+      .alert.alert-info
+        span(data-i18n="play_level.victory_sign_up_poke") Want to save your code? Create a free account!
 
     form.form
       .form-group
@@ -31,7 +34,7 @@
       .form-group
         if mode === 'login'
           div#recover-account-wrapper
-            a(data-toggle="coco-modal", data-target="core/RecoverModal", data-i18n="login.forgo_password")#link-to-recover Forgot your password?
+            a(data-toggle="coco-modal", data-target="core/RecoverModal", data-i18n="login.forgot_password")#link-to-recover Forgot your password?
         label.control-label(for="password")
           span(data-i18n="general.password") Password
           | :
@@ -78,13 +81,11 @@
       span.sign-in-blurb(data-i18n="login.sign_in_with_facebook") Sign in with Facebook
       .facebook-login-wrapper
         .fb-login-button(data-show-faces="false", data-width="200", data-max-rows="1", data-scope="email")
-    // Google+ login causing script errors on IE10
-    if !isIE
-      .btn.btn-danger.btn-lg.btn-illustrated.network-login
-        img.network-logo(src="/images/pages/community/logo_g+.png", draggable="false")
-        span.sign-in-blurb(data-i18n="login.sign_in_with_gplus") Sign in with G+
-        .gplus-login-wrapper
-          .gplus-login-button#gplus-login-button
+    .btn.btn-danger.btn-lg.btn-illustrated.network-login
+      img.network-logo(src="/images/pages/community/logo_g+.png", draggable="false")
+      span.sign-in-blurb(data-i18n="login.sign_in_with_gplus") Sign in with G+
+      .gplus-login-wrapper
+        .gplus-login-button#gplus-login-button
 
   .extra-pane
     if mode === 'login'

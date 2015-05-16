@@ -15,7 +15,7 @@ module.exports = class SimulateTabView extends CocoView
   constructor: (options) ->
     super(options)
     @simulatorsLeaderboardData = new SimulatorsLeaderboardData(me)
-    @simulatorsLeaderboardDataRes = @supermodel.addModelResource(@simulatorsLeaderboardData, 'top_simulators')
+    @simulatorsLeaderboardDataRes = @supermodel.addModelResource(@simulatorsLeaderboardData, 'top_simulators', {cache: false})
     @simulatorsLeaderboardDataRes.load()
     require 'vendor/aether-javascript'
     require 'vendor/aether-python'
@@ -44,11 +44,11 @@ module.exports = class SimulateTabView extends CocoView
   # Simulations
 
   onSimulateButtonClick: (e) ->
-    application.tracker?.trackEvent 'Simulate Button Click', {}
+    application.tracker?.trackEvent 'Simulate Button Click'
     @startSimulating()
 
   startSimulating: ->
-    @simulationPageRefreshTimeout = _.delay @refreshAndContinueSimulating, 20 * 60 * 1000
+    @simulationPageRefreshTimeout = _.delay @refreshAndContinueSimulating, 30 * 60 * 1000
     @simulateNextGame()
     $('#simulate-button').prop 'disabled', true
     $('#simulate-button').text 'Simulating...'
@@ -65,7 +65,7 @@ module.exports = class SimulateTabView extends CocoView
       # Work around simulator getting super slow on Chrome
       fetchAndSimulateTaskOriginal = @simulator.fetchAndSimulateTask
       @simulator.fetchAndSimulateTask = =>
-        if @simulator.simulatedByYou >= 5
+        if @simulator.simulatedByYou >= 20
           console.log '------------------- Destroying  Simulator and making a new one -----------------'
           @simulator.destroy()
           @simulator = null
@@ -77,7 +77,7 @@ module.exports = class SimulateTabView extends CocoView
   refresh: ->
     success = (numberOfGamesInQueue) ->
       $('#games-in-queue').text numberOfGamesInQueue
-    $.ajax '/queue/messagesInQueueCount', {success}
+    $.ajax '/queue/messagesInQueueCount', cache: false, success: success
 
   updateSimulationStatus: (simulationStatus, sessions) ->
     if simulationStatus is 'Fetching simulation data!'
@@ -131,15 +131,14 @@ class SimulatorsLeaderboardData extends CocoClass
     unless @me.get('anonymous')
       score = @me.get('simulatedBy') or 0
       queueSuccess = (@numberOfGamesInQueue) =>
-      promises.push $.ajax '/queue/messagesInQueueCount', {success: queueSuccess}
+      promises.push $.ajax '/queue/messagesInQueueCount', {success: queueSuccess, cache: false}
       @playersAbove = new SimulatorsLeaderboardCollection({order: 1, scoreOffset: score, limit: 4})
       promises.push @playersAbove.fetch()
       if score
         @playersBelow = new SimulatorsLeaderboardCollection({order: -1, scoreOffset: score, limit: 4})
         promises.push @playersBelow.fetch()
       success = (@myRank) =>
-
-      promises.push $.ajax "/db/user/me/simulator_leaderboard_rank?scoreOffset=#{score}", {success}
+      promises.push $.ajax("/db/user/me/simulator_leaderboard_rank?scoreOffset=#{score}", cache: false, success: success)
 
     @promise = $.when(promises...)
     @promise.then @onLoad

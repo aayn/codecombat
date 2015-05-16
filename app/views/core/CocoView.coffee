@@ -60,6 +60,7 @@ module.exports = class CocoView extends Backbone.View
     @undelegateEvents() # removes both events and subs
     view.destroy() for id, view of @subviews
     $('#modal-wrapper .modal').off 'hidden.bs.modal', @modalClosed
+    @$el.find('.has-tooltip, [data-original-title]').tooltip 'destroy'
     @endHighlight()
     @getPointer(false).remove()
     @[key] = undefined for key, value of @
@@ -120,7 +121,7 @@ module.exports = class CocoView extends Backbone.View
 
   getRenderData: (context) ->
     context ?= {}
-    context.isProduction = document.location.href.search(/codecombat.com/) isnt -1
+    context.isProduction = application.isProduction()
     context.me = me
     context.pathname = document.location.pathname  # like '/play/level'
     context.fbRef = context.pathname.replace(/[^a-zA-Z0-9+/=\-.:_]/g, '').slice(0, 40) or 'home'
@@ -199,6 +200,7 @@ module.exports = class CocoView extends Backbone.View
     # special handler for opening modals that are dynamically loaded, rather than static in the page. It works (or should work) like Bootstrap's modals, except use coco-modal for the data-toggle value.
     elem = $(e.target)
     return unless elem.data('toggle') is 'coco-modal'
+    return if elem.attr('disabled')
     target = elem.data('target')
     Modal = require 'views/'+target
     e.stopPropagation()
@@ -239,7 +241,7 @@ module.exports = class CocoView extends Backbone.View
 
   showLoading: ($el=@$el) ->
     $el.find('>').addClass('hidden')
-    $el.append loadingScreenTemplate()
+    $el.append(loadingScreenTemplate()).i18n()
     @_lastLoading = $el
 
   hideLoading: ->
@@ -249,7 +251,7 @@ module.exports = class CocoView extends Backbone.View
     @_lastLoading = null
 
   showReadOnly: ->
-    return if me.isAdmin()
+    return if me.isAdmin() or me.isArtisan()
     warning = $.i18n.t 'editor.read_only_warning2', defaultValue: 'Note: you can\'t save any edits here, because you\'re not logged in.'
     noty text: warning, layout: 'center', type: 'information', killer: true, timeout: 5000
 
@@ -395,12 +397,7 @@ module.exports = class CocoView extends Backbone.View
   # Utilities
 
   getQueryVariable: (param, defaultValue) -> CocoView.getQueryVariable(param, defaultValue)
-  @getQueryVariable: (param, defaultValue) ->
-    query = document.location.search.substring 1
-    pairs = (pair.split('=') for pair in query.split '&')
-    for pair in pairs when pair[0] is param
-      return {'true': true, 'false': false}[pair[1]] ? decodeURIComponent(pair[1])
-    defaultValue
+  @getQueryVariable: (param, defaultValue) -> utils.getQueryVariable(param, defaultValue)  # Moved to utils; TODO finish migrating
 
   getRootView: ->
     view = @

@@ -27,7 +27,7 @@ module.exports = class LadderPlayModal extends ModalView
   constructor: (options, @level, @session, @team) ->
     super(options)
     @nameMap = {}
-    @otherTeam = if team is 'ogres' then 'humans' else 'ogres'
+    @otherTeam = if @team is 'ogres' then 'humans' else 'ogres'
     @startLoadingChallengersMaybe()
     @wizardType = ThangType.loadUniversalWizard()
 
@@ -37,6 +37,9 @@ module.exports = class LadderPlayModal extends ModalView
     aceConfig.language = @$el.find('#tome-language').val()
     me.set 'aceConfig', aceConfig
     me.patch()
+    if @session
+      @session.set 'codeLanguage', aceConfig.language
+      @session.patch()
 
   # PART 1: Load challengers from the db unless some are in the matches
   startLoadingChallengersMaybe: ->
@@ -88,12 +91,13 @@ module.exports = class LadderPlayModal extends ModalView
     ctx.teamID = @team
     ctx.otherTeamID = @otherTeam
     ctx.tutorialLevelExists = @tutorialLevelExists
+    ctx.language = @session?.get('codeLanguage') ? me.get('aceConfig')?.language ? 'python'
     ctx.languages = [
       {id: 'python', name: 'Python'}
       {id: 'javascript', name: 'JavaScript'}
-      {id: 'coffeescript', name: 'CoffeeScript'}
+      {id: 'coffeescript', name: 'CoffeeScript (Experimental)'}
       {id: 'clojure', name: 'Clojure (Experimental)'}
-      {id: 'lua', name: 'Lua (Experimental)'}
+      {id: 'lua', name: 'Lua'}
       {id: 'io', name: 'Io (Experimental)'}
     ]
     teamsList = teamDataFromLevel @level
@@ -195,13 +199,13 @@ class ChallengersData
     _.extend @, Backbone.Events
     score = @session?.get('totalScore') or 25
     @easyPlayer = new LeaderboardCollection(@level, {order: 1, scoreOffset: score - 5, limit: 1, team: @otherTeam})
-    @easyPlayer.fetch()
+    @easyPlayer.fetch cache: false
     @listenToOnce(@easyPlayer, 'sync', @challengerLoaded)
     @mediumPlayer = new LeaderboardCollection(@level, {order: 1, scoreOffset: score, limit: 1, team: @otherTeam})
-    @mediumPlayer.fetch()
+    @mediumPlayer.fetch cache: false
     @listenToOnce(@mediumPlayer, 'sync', @challengerLoaded)
     @hardPlayer = new LeaderboardCollection(@level, {order: -1, scoreOffset: score + 5, limit: 1, team: @otherTeam})
-    @hardPlayer.fetch()
+    @hardPlayer.fetch cache: false
     @listenToOnce(@hardPlayer, 'sync', @challengerLoaded)
 
   challengerLoaded: ->

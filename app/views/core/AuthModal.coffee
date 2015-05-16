@@ -33,6 +33,7 @@ module.exports = class AuthModal extends ModalView
   getRenderData: ->
     c = super()
     c.showRequiredError = @options.showRequiredError
+    c.showSignupRationale = @options.showSignupRationale
     c.mode = @mode
     c.formValues = @previousFormInputs or {}
     c.me = me
@@ -73,7 +74,7 @@ module.exports = class AuthModal extends ModalView
     res = tv4.validateMultiple userObject, User.schema
     return forms.applyErrorsToForm(@$el, res.errors) unless res.valid
     @enableModalInProgress(@$el) # TODO: part of forms
-    loginUser(userObject)
+    loginUser userObject, null, window.nextURL
 
   createAccount: ->
     forms.clearFormAlerts(@$el)
@@ -91,9 +92,8 @@ module.exports = class AuthModal extends ModalView
     return forms.applyErrorsToForm(@$el, res.errors) unless res.valid
     Backbone.Mediator.publish "auth:signed-up", {}
     window.tracker?.trackEvent 'Finished Signup', label: 'CodeCombat'
-    window.tracker?.trackPageView "signup/finished", ['Google Analytics']
     @enableModalInProgress(@$el)
-    createUser userObject, null, window.nextLevelURL
+    createUser userObject, null, window.nextURL
 
   onLoggingInWithFacebook: (e) ->
     modal = $('.modal:visible', @$el)
@@ -120,7 +120,6 @@ module.exports = class AuthModal extends ModalView
   gplusAuthSteps: [
     { i18n: 'login.authenticate_gplus', done: false }
     { i18n: 'login.load_profile', done: false }
-    { i18n: 'login.load_email', done: false }
     { i18n: 'login.finishing', done: false }
   ]
 
@@ -137,12 +136,8 @@ module.exports = class AuthModal extends ModalView
         @gplusAuthSteps[1].done = true
         @renderGPlusAuthChecklist()
 
-      @listenToOnce handler, 'email-loaded', ->
-        @gplusAuthSteps[2].done = true
-        @renderGPlusAuthChecklist()
-
       @listenToOnce handler, 'logging-into-codecombat', ->
-        @gplusAuthSteps[3].done = true
+        @gplusAuthSteps[2].done = true
         @renderGPlusAuthChecklist()
 
   renderGPlusAuthChecklist: ->

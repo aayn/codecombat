@@ -29,10 +29,10 @@ module.exports = class LevelBus extends Bus
   constructor: ->
     super(arguments...)
     @changedSessionProperties = {}
-    if document.location.href.search('codecombat.com') isnt -1
-      @saveSession = _.debounce(@reallySaveSession, 10000, {maxWait: 30000})  # Save us during HoC
+    if application.isProduction()
+      @saveSession = _.debounce(@reallySaveSession, 4000, {maxWait: 10000})  # Save slower on production.
     else
-      @saveSession = _.debounce(@reallySaveSession, 1000, {maxWait: 5000})  # Not this fast during HoC
+      @saveSession = _.debounce(@reallySaveSession, 1000, {maxWait: 5000})  # Save quickly in development.
     @playerIsIdle = false
 
   init: ->
@@ -150,7 +150,7 @@ module.exports = class LevelBus extends Bus
     return unless @onPoint()
     @fireScriptsRef?.update(e)
     state = @session.get('state')
-    scripts = state.scripts
+    scripts = state.scripts ? {}
     scripts.currentScript = e.currentScript
     scripts.currentScriptOffset = e.currentScriptOffset
     @changedSessionProperties.state = true

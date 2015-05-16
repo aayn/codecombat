@@ -9,7 +9,6 @@ utils = require 'core/utils'
 ThangType = require 'models/ThangType'
 LadderSubmissionView = require 'views/play/common/LadderSubmissionView'
 AudioPlayer = require 'lib/AudioPlayer'
-CampaignOptions = require 'lib/CampaignOptions'
 User = require 'models/User'
 utils = require 'core/utils'
 
@@ -24,8 +23,10 @@ module.exports = class HeroVictoryModal extends ModalView
 
   events:
     'click #continue-button': 'onClickContinue'
+    'click .leaderboard-button': 'onClickLeaderboard'
     'click .return-to-ladder-button': 'onClickReturnToLadder'
     'click .sign-up-button': 'onClickSignupButton'
+    'click .continue-from-offer-button': 'onClickContinueFromOffer'
 
   constructor: (options) ->
     super(options)
@@ -67,7 +68,7 @@ module.exports = class HeroVictoryModal extends ModalView
     for thangTypeOriginal in thangTypeOriginals
       thangType = new ThangType()
       thangType.url = "/db/thang.type/#{thangTypeOriginal}/version"
-      thangType.project = ['original', 'rasterIcon', 'name', 'soundTriggers']
+      thangType.project = ['original', 'rasterIcon', 'name', 'soundTriggers', 'i18n']
       @thangTypes[thangTypeOriginal] = @supermodel.loadModel(thangType, 'thang').model
 
     @newEarnedAchievements = []
@@ -82,22 +83,40 @@ module.exports = class HeroVictoryModal extends ModalView
       @newEarnedAchievements.push ea
       @listenToOnce ea, 'sync', ->
         if _.all((ea.id for ea in @newEarnedAchievements))
+          @newEarnedAchievementsResource.markLoaded()
           @listenToOnce me, 'sync', ->
             @readyToContinue = true
             @updateSavingProgressStatus()
-          me.fetch() unless me.loading
+          me.fetch cache: false unless me.loading
 
     @readyToContinue = true if not @achievements.models.length
+
+    # have to use a something resource because addModelResource doesn't handle models being upserted/fetched via POST like we're doing here
+    @newEarnedAchievementsResource = @supermodel.addSomethingResource('earned achievements') if @newEarnedAchievements.length
 
   getRenderData: ->
     c = super()
     c.levelName = utils.i18n @level.attributes, 'name'
-    earnedAchievementMap = _.indexBy(@earnedAchievements?.models or [], (ea) -> ea.get('achievement'))
+    earnedAchievementMap = _.indexBy(@newEarnedAchievements or [], (ea) -> ea.get('achievement'))
     for achievement in @achievements.models
       earnedAchievement = earnedAchievementMap[achievement.id]
       if earnedAchievement
-        achievement.completedAWhileAgo = new Date() - Date.parse(earnedAchievement.get('created')) > 30 * 1000
-    c.achievements = @achievements.models
+        achievement.completedAWhileAgo = new Date().getTime() - Date.parse(earnedAchievement.get('created')) > 30 * 1000
+      achievement.worth = achievement.get 'worth', true
+      achievement.gems = achievement.get('rewards')?.gems
+    c.achievements = @achievements.models.slice()
+    for achievement in c.achievements
+      achievement.description = utils.i18n achievement.attributes, 'description'
+      continue unless @supermodel.finished() and proportionalTo = achievement.get 'proportionalTo'
+      # For repeatable achievements, we modify their base worth/gems by their repeatable growth functions.
+      achievedAmount = utils.getByPath @session.attributes, proportionalTo
+      previousAmount = Math.max(0, achievedAmount - 1)
+      func = achievement.getExpFunction()
+      achievement.previousWorth = (achievement.get('worth') ? 0) * func previousAmount
+      achievement.worth = (achievement.get('worth') ? 0) * func achievedAmount
+      rewards = achievement.get 'rewards'
+      achievement.gems = rewards?.gems * func achievedAmount if rewards?.gems
+      achievement.previousGems = rewards?.gems * func previousAmount if rewards?.gems
 
     # for testing the three states
     #if c.achievements.length
@@ -115,7 +134,7 @@ module.exports = class HeroVictoryModal extends ModalView
     c.me = me
     c.readyToRank = @level.get('type', true) is 'hero-ladder' and @session.readyToRank()
     c.level = @level
-    @continueLevelLink = @getNextLevelLink 'continue'
+    c.i18n = utils.i18n
 
     elapsed = (new Date() - new Date(me.get('dateCreated')))
     isHourOfCode = me.get('hourOfCode') or elapsed < 120 * 60 * 1000
@@ -129,9 +148,11 @@ module.exports = class HeroVictoryModal extends ModalView
         $('body').append($('<img src="http://code.org/api/hour/finish_codecombat.png" style="visibility: hidden;">'))
         me.set 'hourOfCodeComplete', true  # Note that this will track even for players who don't have hourOfCode set.
         me.patch()
-        window.tracker?.trackEvent 'Hour of Code Finish', {}
+        window.tracker?.trackEvent 'Hour of Code Finish'
       # Show the "I'm done" button between 30 - 120 minutes if they definitely came from Hour of Code
       c.showHourOfCodeDoneButton = me.get('hourOfCode') and showDone
+
+    c.showLeaderboard = @level.get('scoreTypes')?.length > 0
 
     return c
 
@@ -174,6 +195,7 @@ module.exports = class HeroVictoryModal extends ModalView
     return if @destroyed
     @sequentialAnimatedPanels = _.map(@animatedPanels.find('.reward-panel'), (panel) -> {
       number: $(panel).data('number')
+      previousNumber: $(panel).data('previous-number')
       textEl: $(panel).find('.reward-text')
       rootEl: $(panel)
       unit: $(panel).data('number-unit')
@@ -200,7 +222,7 @@ module.exports = class HeroVictoryModal extends ModalView
       duration = 1000
     ratio = @getEaseRatio (new Date() - @sequentialAnimationStart), duration
     if panel.unit is 'xp'
-      newXP = Math.floor(ratio * panel.number)
+      newXP = Math.floor(panel.previousNumber + ratio * (panel.number - panel.previousNumber))
       totalXP = @totalXPAnimated + newXP
       if totalXP isnt @lastTotalXP
         panel.textEl.text('+' + newXP)
@@ -208,19 +230,23 @@ module.exports = class HeroVictoryModal extends ModalView
         @updateXPBars(totalXP)
         xpTrigger = 'xp-' + (totalXP % 6)  # 6 xp sounds
         Backbone.Mediator.publish 'audio-player:play-sound', trigger: xpTrigger, volume: 0.5 + ratio / 2
+        @XPEl.addClass 'four-digits' if totalXP >= 1000 and @lastTotalXP < 1000
+        @XPEl.addClass 'five-digits' if totalXP >= 10000 and @lastTotalXP < 10000
         @lastTotalXP = totalXP
     else if panel.unit is 'gem'
-      newGems = Math.floor(ratio * panel.number)
+      newGems = Math.floor(panel.previousNumber + ratio * (panel.number - panel.previousNumber))
       totalGems = @totalGemsAnimated + newGems
       if totalGems isnt @lastTotalGems
         panel.textEl.text('+' + newGems)
         @gemEl.text(totalGems)
         gemTrigger = 'gem-' + (parseInt(panel.number * ratio) % 4)  # 4 gem sounds
         Backbone.Mediator.publish 'audio-player:play-sound', trigger: gemTrigger, volume: 0.5 + ratio / 2
+        @gemEl.addClass 'four-digits' if totalGems >= 1000 and @lastTotalGems < 1000
+        @gemEl.addClass 'five-digits' if totalGems >= 10000 and @lastTotalGems < 10000
         @lastTotalGems = totalGems
     else if panel.item
       thangType = @thangTypes[panel.item]
-      panel.textEl.text(thangType.get('name'))
+      panel.textEl.text utils.i18n(thangType.attributes, 'name')
       Backbone.Mediator.publish 'audio-player:play-sound', trigger: 'item-unlocked', volume: 1 if 0.5 < ratio < 0.6
     else if panel.hero
       thangType = @thangTypes[panel.hero]
@@ -248,6 +274,7 @@ module.exports = class HeroVictoryModal extends ModalView
 
   updateXPBars: (achievedXP) ->
     previousXP = @previousXP
+    previousXP = previousXP + 1000000 if me.isInGodMode()
     previousLevel = @previousLevel
 
     currentXP = previousXP + achievedXP
@@ -283,8 +310,6 @@ module.exports = class HeroVictoryModal extends ModalView
     Backbone.Mediator.publish 'music-player:enter-menu', terrain: @level.get('terrain', true)
 
   updateSavingProgressStatus: ->
-    # A/B Testing no delay showing the signup and continue buttons in hero victory modal
-    return unless @animationComplete or me.getFastVictoryModalGroup() is 'fast'
     @$el.find('#saving-progress-label').toggleClass('hide', @readyToContinue)
     @$el.find('.next-level-button').toggleClass('hide', not @readyToContinue)
     @$el.find('.sign-up-poke').toggleClass('hide', not @readyToContinue)
@@ -303,34 +328,31 @@ module.exports = class HeroVictoryModal extends ModalView
     else
       AudioPlayer.playSound name, 1
 
-  getLevelInfoForSlug: (slug) ->
-    for campaign in require('views/play/WorldMapView').campaigns
-      for level in campaign.levels
-        return level if level.id is slug
-
   getNextLevelCampaign: ->
-    # Wouldn't handle skipping/more practice across campaign boundaries, but we don't do that.
-    campaign = CampaignOptions.getCampaignForSlug @level.get 'slug'
-    if nextLevelSlug = @getNextLevel 'continue'
-      campaign = CampaignOptions.getCampaignForSlug nextLevelSlug
-    campaign or 'dungeon'
+    {'kithgard-gates': 'forest', 'siege-of-stonehold': 'desert', 'clash-of-clones': 'mountain'}[@level.get('slug')] or @level.get 'campaign'  # Much easier to just keep this updated than to dynamically figure it out.
 
-  getNextLevelLink: (type) ->
+  getNextLevelLink: ->
     link = '/play'
     nextCampaign = @getNextLevelCampaign()
-    link += '/' + nextCampaign unless nextCampaign is 'dungeon'
-    return link unless nextLevel = @getNextLevel type
-    "#{link}?next=#{nextLevel}"
+    link += '/' + nextCampaign
+    link
 
-  getNextLevel: (type) ->
-    levelInfo = @getLevelInfoForSlug @level.get 'slug'
-    levelInfo?.nextLevels?[type]  # 'continue'; TODO: refactor to not have the object and just use single nextLevel property
-
-  onClickContinue: (e) ->
+  onClickContinue: (e, extraOptions=null) ->
     @playSound 'menu-button-click'
-    nextLevelLink = @continueLevelLink
+    nextLevelLink = @getNextLevelLink()
     # Preserve the supermodel as we navigate back to the world map.
-    Backbone.Mediator.publish 'router:navigate', route: nextLevelLink, viewClass: require('views/play/WorldMapView'), viewArgs: [{supermodel: if @options.hasReceivedMemoryWarning then null else @supermodel}, @getNextLevelCampaign()]
+    options =
+      justBeatLevel: @level
+      supermodel: if @options.hasReceivedMemoryWarning then null else @supermodel
+    _.merge options, extraOptions if extraOptions
+    navigationEvent = route: nextLevelLink, viewClass: require('views/play/CampaignView'), viewArgs: [options, @getNextLevelCampaign()]
+    if @level.get('slug') is 'lost-viking' and not (me.get('age') in ['0-13', '14-17'])
+      @showOffer navigationEvent
+    else
+      Backbone.Mediator.publish 'router:navigate', navigationEvent
+
+  onClickLeaderboard: (e) ->
+    @onClickContinue e, showLeaderboard: true
 
   onClickReturnToLadder: (e) ->
     @playSound 'menu-button-click'
@@ -342,5 +364,15 @@ module.exports = class HeroVictoryModal extends ModalView
   onClickSignupButton: (e) ->
     e.preventDefault()
     window.tracker?.trackEvent 'Started Signup', category: 'Play Level', label: 'Hero Victory Modal', level: @level.get('slug')
-    window.tracker?.trackPageView "signup/start", ['Google Analytics']
     @openModalView new AuthModal {mode: 'signup'}
+
+  showOffer: (@navigationEventUponCompletion) ->
+    @$el.find('.modal-footer > *').hide()
+    @$el.find(".modal-footer > .offer.#{@level.get('slug')}").show()
+
+  onClickContinueFromOffer: (e) ->
+    url = {
+      'lost-viking': 'http://www.vikingcodeschool.com/codecombat?utm_source=codecombat&utm_medium=viking_level&utm_campaign=affiliate&ref=Code+Combat+Elite'
+    }[@level.get('slug')]
+    Backbone.Mediator.publish 'router:navigate', @navigationEventUponCompletion
+    window.open url, '_blank' if url

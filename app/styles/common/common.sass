@@ -230,8 +230,8 @@ kbd
 
 .popover
   border-style: solid
-  border-image: url(/images/level/popover_background.png) 29 39 fill stretch
-  border-width: 15px 20px
+  border-image: url(/images/level/popover_border_background.png) 16 12 fill stretch
+  border-width: 16px 12px
   .arrow
     display: none
   .btn
@@ -299,7 +299,7 @@ kbd
     &.btn-primary
       border-image-source: url(/images/common/button-background-primary-disabled-border.png)
     &.btn-success
-      border-image-source: url(/images/common/button-background-success-disabled-border.png)
+      border-image-source: url(/images/common/button-background-success-inactive-border.png)
     &.btn-warning
       border-image-source: url(/images/common/button-background-warning-disabled-border.png)
     &.btn-danger
@@ -357,7 +357,7 @@ html.no-borderimage
       &.btn-primary
         background-image: url(/images/common/button-background-primary-disabled.png)
       &.btn-success
-        background-image: url(/images/common/button-background-success-disabled.png)
+        background-image: url(/images/common/button-background-success-inactive.png)
       &.btn-warning
         background-image: url(/images/common/button-background-warning-disabled.png)
       &.btn-danger
@@ -378,3 +378,15 @@ body > iframe[src^="https://apis.google.com"]
   
   .progress-bar
     background-color: lightblue
+
+.treema-node input[type='checkbox']
+  @include scale(1.25)
+  width: auto
+  margin: 8px 15px 8px 15px
+
+.particle-man
+  position: absolute
+  z-index: 100
+  top: 0
+  left: 0
+  pointer-events: none

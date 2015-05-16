@@ -11,11 +11,9 @@ module.exports = class User extends CocoModel
   urlRoot: '/db/user'
   notyErrors: false
 
-  onLoaded:  ->
-    CocoModel.pollAchievements() # Check for achievements on login
-    super arguments...
-
   isAdmin: -> 'admin' in @get('permissions', true)
+  isArtisan: -> 'artisan' in @get('permissions', true)
+  isInGodMode: -> 'godmode' in @get('permissions', true)
   isAnonymous: -> @get('anonymous', true)
   displayName: -> @get('name', true)
 
@@ -37,6 +35,7 @@ module.exports = class User extends CocoModel
 
   @getUnconflictedName: (name, done) ->
     $.ajax "/auth/name/#{name}",
+      cache: false
       success: (data) -> done data.name
       statusCode: 409: (data) ->
         response = JSON.parse data.responseText
@@ -75,16 +74,19 @@ module.exports = class User extends CocoModel
       return level if tierThreshold >= tier
 
   level: ->
-    User.levelFromExp(@get('points'))
+    totalPoint = @get('points')
+    totalPoint = totalPoint + 1000000 if me.isInGodMode()
+    User.levelFromExp(totalPoint)
 
   tier: ->
     User.tierFromLevel @level()
 
   gems: ->
     gemsEarned = @get('earned')?.gems ? 0
+    gemsEarned = gemsEarned + 100000 if me.isInGodMode()
     gemsPurchased = @get('purchased')?.gems ? 0
     gemsSpent = @get('spent') ? 0
-    gemsEarned + gemsPurchased - gemsSpent
+    Math.floor gemsEarned + gemsPurchased - gemsSpent
 
   heroes: ->
     heroes = (me.get('purchased')?.heroes ? []).concat([ThangType.heroes.captain, ThangType.heroes.knight])
@@ -92,7 +94,7 @@ module.exports = class User extends CocoModel
     heroes
   items: -> (me.get('earned')?.items ? []).concat(me.get('purchased')?.items ? []).concat([ThangType.items['simple-boots']])
   levels: -> (me.get('earned')?.levels ? []).concat(me.get('purchased')?.levels ? []).concat(Level.levels['dungeons-of-kithgard'])
-  ownsHero: (heroOriginal) -> heroOriginal in @heroes()
+  ownsHero: (heroOriginal) -> me.isInGodMode() || heroOriginal in @heroes()
   ownsItem: (itemOriginal) -> itemOriginal in @items()
   ownsLevel: (levelOriginal) -> levelOriginal in @levels()
 
@@ -115,44 +117,31 @@ module.exports = class User extends CocoModel
     application.tracker.identify announcesActionAudioGroup: @announcesActionAudioGroup unless me.isAdmin()
     @announcesActionAudioGroup
 
-  getFastVictoryModalGroup: ->
-    # A/B Testing no delay showing the signup and continue buttons in hero victory modal
-    return @fastVictoryModalGroup if @fastVictoryModalGroup
-    group = me.get('testGroupNumber') % 2
-    @fastVictoryModalGroup = switch group
-      when 0 then 'normal'
-      when 1 then 'fast'
-    @fastVictoryModalGroup = 'fast' if me.isAdmin()
-    application.tracker.identify fastVictoryModalGroup: @fastVictoryModalGroup unless me.isAdmin()
-    @fastVictoryModalGroup
-
-  getGemPromptGroup: ->
-    # A/B Testing whether extra prompt when low gems leads to more gem purchases
-    # TODO: Rename gem purchase event in BuyGemsModal to 'Started gem purchase' after this test is over
-    return @gemPromptGroup if @gemPromptGroup
+  # Signs and Portents was receiving updates after test started, and also had a big bug on March 4, so just look at test from March 5 on.
+  # ... and stopped working well until another update on March 10, so maybe March 11+...
+  # ... and another round, and then basically it just isn't completing well, so we pause the test until we can fix it.
+  getFourthLevelGroup: ->
+    return 'forgetful-gemsmith'
+    return @fourthLevelGroup if @fourthLevelGroup
     group = me.get('testGroupNumber') % 8
-    @gemPromptGroup = switch group
-      when 0, 1, 2, 3 then 'prompt'
-      when 4, 5, 6, 7 then 'no-prompt'
-    @gemPromptGroup = 'prompt' if me.isAdmin()
-    application.tracker.identify gemPromptGroup: @gemPromptGroup unless me.isAdmin()
-    @gemPromptGroup
+    @fourthLevelGroup = switch group
+      when 0, 1, 2, 3 then 'signs-and-portents'
+      when 4, 5, 6, 7 then 'forgetful-gemsmith'
+    @fourthLevelGroup = 'signs-and-portents' if me.isAdmin()
+    application.tracker.identify fourthLevelGroup: @fourthLevelGroup unless me.isAdmin()
+    @fourthLevelGroup
 
-  getSubscribeCopyGroup: ->
-    # A/B Testing alternate subscribe modal copy
-    return @subscribeCopyGroup if @subscribeCopyGroup
-    group = me.get('testGroupNumber') % 6
-    @subscribeCopyGroup = switch group
-      when 0, 1, 2 then 'original'
-      when 3, 4, 5 then 'new'
-    if (not @get('preferredLanguage') or /^en/.test(@get('preferredLanguage'))) and not me.isAdmin()
-      application.tracker.identify subscribeCopyGroup: @subscribeCopyGroup
-    else
-      @subscribeCopyGroup = 'original'
-    @subscribeCopyGroup
+  getVideoTutorialStylesIndex: (numVideos=0)->
+    # A/B Testing video tutorial styles
+    # Not a constant number of videos available (e.g. could be 0, 1, 3, or 4 currently)
+    return 0 unless numVideos > 0
+    return me.get('testGroupNumber') % numVideos
 
   isPremium: ->
+    return true if me.isInGodMode()
+    return true if me.isAdmin()
     return false unless stripe = @get('stripe')
+    return true if stripe.sponsorID
     return true if stripe.subscriptionID
     return true if stripe.free is true
     return true if _.isString(stripe.free) and new Date() < new Date(stripe.free)

@@ -19,16 +19,42 @@ UserSchema = new mongoose.Schema({
     'default': Date.now
 }, {strict: false})
 
+UserSchema.index({'dateCreated': 1})
+UserSchema.index({'emailLower': 1}, {unique: true, sparse: true, name: 'emailLower_1'})
+UserSchema.index({'facebookID': 1}, {sparse: true})
+UserSchema.index({'gplusID': 1}, {sparse: true})
+UserSchema.index({'iosIdentifierForVendor': 1}, {name: 'iOS identifier for vendor', sparse: true, unique: true})
+UserSchema.index({'mailChimp.leid': 1}, {sparse: true})
+UserSchema.index({'nameLower': 1}, {sparse: true, name: 'nameLower_1'})
+UserSchema.index({'simulatedBy': 1})
+UserSchema.index({'slug': 1}, {name: 'slug index', sparse: true, unique: true})
+UserSchema.index({'stripe.subscriptionID': 1}, {unique: true, sparse: true})
+UserSchema.index({'siteref': 1}, {name: 'siteref index', sparse: true})
+
 UserSchema.post('init', ->
   @set('anonymous', false) if @get('email')
 )
+
+UserSchema.methods.isInGodMode = ->
+  p = @get('permissions')
+  return p and 'godmode' in p
 
 UserSchema.methods.isAdmin = ->
   p = @get('permissions')
   return p and 'admin' in p
 
+UserSchema.methods.isArtisan = ->
+  p = @get('permissions')
+  return p and 'artisan' in p
+
 UserSchema.methods.isAnonymous = ->
   @get 'anonymous'
+
+UserSchema.methods.getUserInfo = ->
+  info =
+    id : @get('_id')
+    email : if @get('anonymous') then 'Unregistered User' else @get('email')
+  return info
 
 UserSchema.methods.trackActivity = (activityName, increment) ->
   now = new Date()
@@ -66,6 +92,7 @@ UserSchema.methods.setEmailSubscription = (newName, enabled) ->
 
 UserSchema.methods.gems = ->
   gemsEarned = @get('earned')?.gems ? 0
+  gemsEarned = gemsEarned + 100000 if @isInGodMode()
   gemsPurchased = @get('purchased')?.gems ? 0
   gemsSpent = @get('spent') ? 0
   gemsEarned + gemsPurchased - gemsSpent
@@ -112,6 +139,7 @@ UserSchema.statics.updateServiceSettings = (doc, callback) ->
   params.update_existing = true
 
   onSuccess = (data) ->
+    data.email = doc.get('email')  # Make sure that we don't spam opt-in emails even if MailChimp doesn't update the email it gets in this object until they have confirmed.
     doc.set('mailChimp', data)
     doc.updatedMailChimp = true
     doc.save()
@@ -122,7 +150,7 @@ UserSchema.statics.updateServiceSettings = (doc, callback) ->
     doc.updatedMailChimp = true
     callback?()
 
-  mc?.lists.subscribe params, onSuccess, onFailure
+  mc?.lists.subscribe params, onSuccess, onFailure unless config.unittest
 
 UserSchema.statics.statsMapping =
   edits:
@@ -131,18 +159,27 @@ UserSchema.statics.statsMapping =
     'level.component': 'stats.levelComponentEdits'
     'level.system': 'stats.levelSystemEdits'
     'thang.type': 'stats.thangTypeEdits'
+    'Achievement': 'stats.achievementEdits'
+    'campaign': 'stats.campaignEdits'
+    'poll': 'stats.pollEdits'
   translations:
     article: 'stats.articleTranslationPatches'
     level: 'stats.levelTranslationPatches'
     'level.component': 'stats.levelComponentTranslationPatches'
     'level.system': 'stats.levelSystemTranslationPatches'
     'thang.type': 'stats.thangTypeTranslationPatches'
+    'Achievement': 'stats.achievementTranslationPatches'
+    'campaign': 'stats.campaignTranslationPatches'
+    'poll': 'stats.pollTranslationPatches'
   misc:
     article: 'stats.articleMiscPatches'
     level: 'stats.levelMiscPatches'
     'level.component': 'stats.levelComponentMiscPatches'
     'level.system': 'stats.levelSystemMiscPatches'
     'thang.type': 'stats.thangTypeMiscPatches'
+    'Achievement': 'stats.achievementMiscPatches'
+    'campaign': 'stats.campaignMiscPatches'
+    'poll': 'stats.pollMiscPatches'
 
 UserSchema.statics.incrementStat = (id, statName, done, inc=1) ->
   id = mongoose.Types.ObjectId id if _.isString id
@@ -150,7 +187,7 @@ UserSchema.statics.incrementStat = (id, statName, done, inc=1) ->
     log.error err if err?
     err = new Error "Could't find user with id '#{id}'" unless user or err
     return done() if err?
-    user.incrementStat statName, done, inc=1
+    user.incrementStat statName, done, inc
 
 UserSchema.methods.incrementStat = (statName, done, inc=1) ->
   @set statName, (@get(statName) or 0) + inc
@@ -172,23 +209,35 @@ UserSchema.methods.register = (done) ->
       @set 'name', uniqueName
       done()
   else done()
-  data =
-    email_id: sendwithus.templates.welcome_email
-    recipient:
-      address: @get 'email'
-  sendwithus.api.send data, (err, result) ->
-    log.error "sendwithus post-save error: #{err}, result: #{result}" if err
-  delighted.addDelightedUser @
+  if @isEmailSubscriptionEnabled 'generalNews'
+    data =
+      email_id: sendwithus.templates.welcome_email
+      recipient:
+        address: @get 'email'
+    sendwithus.api.send data, (err, result) ->
+      log.error "sendwithus post-save error: #{err}, result: #{result}" if err
+    delighted.addDelightedUser @
   @saveActiveUser 'register'
 
 UserSchema.methods.isPremium = ->
+  return true if @isInGodMode()
+  return true if @isAdmin()
   return false unless stripeObject = @get('stripe')
+  return true if stripeObject.sponsorID
   return true if stripeObject.subscriptionID
   return true if stripeObject.free is true
   return true if _.isString(stripeObject.free) and new Date() < new Date(stripeObject.free)
   return false
 
+UserSchema.methods.level = ->
+  xp = @get('points') or 0
+  a = 5
+  b = c = 100
+  if xp > 0 then Math.floor(a * Math.log((1/b) * (xp + c))) + 1 else 1
+
 UserSchema.statics.saveActiveUser = (id, event, done=null) ->
+  # TODO: Disabling this until we know why our app servers CPU grows out of control.
+  return done?()
   id = mongoose.Types.ObjectId id if _.isString id
   @findById id, (err, user) ->
     if err?
@@ -198,6 +247,8 @@ UserSchema.statics.saveActiveUser = (id, event, done=null) ->
     done?()
 
 UserSchema.methods.saveActiveUser = (event, done=null) ->
+  # TODO: Disabling this until we know why our app servers CPU grows out of control.
+  return done?()
   try
     return done?() if @isAdmin()
     userID = @get('_id')
@@ -220,8 +271,10 @@ UserSchema.methods.saveActiveUser = (event, done=null) ->
     done?()
 
 UserSchema.pre('save', (next) ->
-  @set('emailLower', @get('email')?.toLowerCase())
-  @set('nameLower', @get('name')?.toLowerCase())
+  if email = @get('email')
+    @set('emailLower', email.toLowerCase())
+  if name = @get('name')
+    @set('nameLower', name.toLowerCase())
   pwd = @get('password')
   if @get('password')
     @set('passwordHash', User.hashPassword(pwd))
@@ -248,19 +301,18 @@ UserSchema.statics.hashPassword = (password) ->
 UserSchema.statics.privateProperties = [
   'permissions', 'email', 'mailChimp', 'firstName', 'lastName', 'gender', 'facebookID',
   'gplusID', 'music', 'volume', 'aceConfig', 'employerAt', 'signedEmployerAgreement',
-  'emailSubscriptions', 'emails', 'activity', 'stripe', 'stripeCustomerID'
+  'emailSubscriptions', 'emails', 'activity', 'stripe', 'stripeCustomerID', 'chinaVersion'
 ]
 UserSchema.statics.jsonSchema = jsonschema
 UserSchema.statics.editableProperties = [
   'name', 'photoURL', 'password', 'anonymous', 'wizardColor1', 'volume',
-  'firstName', 'lastName', 'gender', 'facebookID', 'gplusID', 'emails',
+  'firstName', 'lastName', 'gender', 'ageRange', 'facebookID', 'gplusID', 'emails',
   'testGroupNumber', 'music', 'hourOfCode', 'hourOfCodeComplete', 'preferredLanguage',
   'wizard', 'aceConfig', 'autocastDelay', 'lastLevel', 'jobProfile', 'savedEmployerFilterAlerts',
-  'heroConfig', 'iosIdentifierForVendor'
+  'heroConfig', 'iosIdentifierForVendor', 'siteref', 'referrer'
 ]
 
 UserSchema.plugin plugins.NamedPlugin
-UserSchema.index({'stripe.subscriptionID':1}, {unique: true, sparse: true})
 
 module.exports = User = mongoose.model('User', UserSchema)
 
